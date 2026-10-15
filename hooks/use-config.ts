@@ -15,6 +15,8 @@ export interface ConfigData {
   oauthOnly: boolean;
   oauthClientId: string;
   oauthIssuerUrl: string;
+  /** Lite on a static host: RFC 8707 `resource` sent with the OIDC sign-in. */
+  oauthResource?: string;
   oauthScopes: string;
   rememberMeEnabled: boolean;
   settingsSyncEnabled: boolean;
@@ -150,6 +152,7 @@ export function useConfig(): AppConfig {
     oauthOnly: configCache?.oauthOnly || false,
     oauthClientId: configCache?.oauthClientId || '',
     oauthIssuerUrl: configCache?.oauthIssuerUrl || '',
+    oauthResource: configCache?.oauthResource || '',
     oauthScopes: configCache?.oauthScopes || '',
     rememberMeEnabled: configCache?.rememberMeEnabled || false,
     settingsSyncEnabled: configCache?.settingsSyncEnabled || false,
@@ -195,6 +198,7 @@ export function useConfig(): AppConfig {
         oauthOnly: configCache.oauthOnly,
         oauthClientId: configCache.oauthClientId,
         oauthIssuerUrl: configCache.oauthIssuerUrl,
+        oauthResource: configCache.oauthResource,
         oauthScopes: configCache.oauthScopes,
         rememberMeEnabled: configCache.rememberMeEnabled,
         settingsSyncEnabled: configCache.settingsSyncEnabled,
@@ -241,6 +245,7 @@ export function useConfig(): AppConfig {
           oauthOnly: data.oauthOnly,
           oauthClientId: data.oauthClientId,
           oauthIssuerUrl: data.oauthIssuerUrl,
+          oauthResource: data.oauthResource,
           oauthScopes: data.oauthScopes,
           rememberMeEnabled: data.rememberMeEnabled,
           settingsSyncEnabled: data.settingsSyncEnabled,

@@ -435,6 +435,8 @@ export async function liteExchangeAuthorizationCode(params: {
   codeVerifier: string;
   redirectUri: string;
   clientId: string;
+  /** RFC 8707 resource, when the authorization request named one. */
+  resource?: string;
 }): Promise<LiteTokens> {
   const response = await fetch(params.tokenEndpoint, {
     method: 'POST',
@@ -445,6 +447,7 @@ export async function liteExchangeAuthorizationCode(params: {
       client_id: params.clientId,
       redirect_uri: params.redirectUri,
       code_verifier: params.codeVerifier,
+      ...(params.resource ? { resource: params.resource } : {}),
     }).toString(),
   });
   const tokens = (await response.json().catch(() => ({}))) as TokenResponse;

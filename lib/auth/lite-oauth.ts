@@ -271,6 +271,13 @@ export interface LiteOAuthFlow {
   persistent: boolean;
   /** Where sign-out revokes the refresh token, when discovery named it. */
   revocationEndpoint?: string;
+  /** RFC 8707 resource the authorization request named (config.json `oauthResource`); the code exchange repeats it. */
+  resource?: string;
+}
+
+/** Adds config.json's `oauthResource` (RFC 8707) to an authorization request; nothing when unset. */
+export function setLiteOAuthResource(authUrl: URL, resource: string | undefined): void {
+  if (resource) authUrl.searchParams.set('resource', resource);
 }
 
 export function saveLiteOAuthFlow(flow: LiteOAuthFlow): void {
@@ -295,6 +302,7 @@ export function readLiteOAuthFlow(): LiteOAuthFlow | null {
       ...(typeof flow.revocationEndpoint === 'string' && flow.revocationEndpoint
         ? { revocationEndpoint: flow.revocationEndpoint }
         : {}),
+      ...(typeof flow.resource === 'string' && flow.resource ? { resource: flow.resource } : {}),
     };
   } catch {
     return null;

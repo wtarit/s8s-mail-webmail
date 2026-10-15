@@ -32,6 +32,7 @@ import {
   liteDiscoverStaticOAuth,
   liteStaticIssuer,
   saveLiteOAuthFlow,
+  setLiteOAuthResource,
   type LiteOAuthDiscovery,
 } from "@/lib/auth/lite-oauth";
 import { toAsciiDomain } from "@/lib/idn";
@@ -161,7 +162,7 @@ function LoginPageContent() {
   usePrefetchMailView(!isMobileHandoff);
   const { login, loginWithToken, loginDemo, isLoading, error, clearError, isAuthenticated } = useAuthStore();
   const { theme, setTheme, initializeTheme } = useThemeStore(useShallow((s) => ({ theme: s.theme, setTheme: s.setTheme, initializeTheme: s.initializeTheme })));
-  const { appName, jmapServerUrl: configuredServerUrl, oauthEnabled, oauthOnly, oauthClientId: globalOauthClientId, oauthIssuerUrl: globalOauthIssuerUrl, oauthScopes, rememberMeEnabled, devMode, demoMode, loginLogoLightUrl, loginLogoDarkUrl, loginCompanyName, loginImprintUrl, loginPrivacyPolicyUrl, loginWebsiteUrl, loginLogoMaxHeight, loginLogoMaxWidth, loginShowHeading, loginShowSubtitle, loginShowTotp, loginShowTokenLogin, loginShowRememberMe, loginShowVersion, isLoading: configLoading, error: configError, autoSsoEnabled, embeddedMode: _embeddedMode, allowCustomJmapEndpoint, jmapServers, jmapServerAutoPickByDomain } = useConfig();
+  const { appName, jmapServerUrl: configuredServerUrl, oauthEnabled, oauthOnly, oauthClientId: globalOauthClientId, oauthIssuerUrl: globalOauthIssuerUrl, oauthResource: globalOauthResource, oauthScopes, rememberMeEnabled, devMode, demoMode, loginLogoLightUrl, loginLogoDarkUrl, loginCompanyName, loginImprintUrl, loginPrivacyPolicyUrl, loginWebsiteUrl, loginLogoMaxHeight, loginLogoMaxWidth, loginShowHeading, loginShowSubtitle, loginShowTotp, loginShowTokenLogin, loginShowRememberMe, loginShowVersion, isLoading: configLoading, error: configError, autoSsoEnabled, embeddedMode: _embeddedMode, allowCustomJmapEndpoint, jmapServers, jmapServerAutoPickByDomain } = useConfig();
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
   const colorModeLocked = usePolicyStore((s) => s.getColorModePolicy().locked);
 
@@ -755,6 +756,7 @@ function LoginPageContent() {
     const state = generateState();
     const redirectUri = getLiteOAuthRedirectUri();
     const clientId = liteStaticOAuth ? globalOauthClientId.trim() : getLiteClientId();
+    const liteResource = liteStaticOAuth ? globalOauthResource : undefined;
 
     sessionStorage.setItem("oauth_code_verifier", verifier);
     sessionStorage.setItem("oauth_state", state);
@@ -770,6 +772,7 @@ function LoginPageContent() {
       redirectUri,
       persistent: persistSession,
       revocationEndpoint: discovery.metadata.revocation_endpoint,
+      ...(liteResource ? { resource: liteResource } : {}),
     });
 
     const authUrl = new URL(discovery.metadata.authorization_endpoint);
@@ -781,6 +784,7 @@ function LoginPageContent() {
     authUrl.searchParams.set("code_challenge", challenge);
     authUrl.searchParams.set("code_challenge_method", "S256");
     if (account) authUrl.searchParams.set("login_hint", account);
+    setLiteOAuthResource(authUrl, liteResource);
     if (isAddAccountMode) {
       authUrl.searchParams.set("prompt", "select_account");
     }

@@ -338,6 +338,53 @@ describe('Lite on Stalwart: pending OAuth flow and code exchange', () => {
     expect(new Headers(calls[0].init?.headers).has('Authorization')).toBe(false);
   });
 
+  it('sends the RFC 8707 resource with the code exchange when one is set, and never on refresh', async () => {
+    const { tokens } = await loadModules();
+    const bodies: Record<string, string>[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(Object.fromEntries(new URLSearchParams(String(init?.body))));
+      return jsonResponse({ access_token: 'AT', refresh_token: 'RT', expires_in: 900 });
+    }));
+    const exchange = {
+      tokenEndpoint: 'https://id.example.org/token', code: 'c', codeVerifier: 'v', redirectUri: 'https://mail.example.com/oauth/callback', clientId: 'app',
+    };
+
+    await tokens.liteExchangeAuthorizationCode({ ...exchange, resource: 'https://mail.example.com/jmap' });
+    expect(bodies[0]).toMatchObject({ grant_type: 'authorization_code', resource: 'https://mail.example.com/jmap' });
+
+    await tokens.liteExchangeAuthorizationCode(exchange);
+    expect(bodies[1]).not.toHaveProperty('resource');
+    await tokens.liteExchangeAuthorizationCode({ ...exchange, resource: '' });
+    expect(bodies[2]).not.toHaveProperty('resource');
+
+    tokens.saveLiteRefreshToken(0, { serverUrl: SERVER, username: 'bob@corp.example', refreshToken: 'RT', clientId: 'app', tokenEndpoint: 'https://id.example.org/token' }, true);
+    await tokens.liteRefreshTokens(0);
+    expect(bodies[3]).toEqual({ grant_type: 'refresh_token', refresh_token: 'RT', client_id: 'app' });
+  });
+
+  it('adds the resource to the authorization request only when set', async () => {
+    const { oauth } = await loadModules('static');
+    const withResource = new URL('https://id.example.org/authorize?response_type=code');
+    oauth.setLiteOAuthResource(withResource, 'https://mail.example.com/jmap');
+    expect(withResource.searchParams.get('resource')).toBe('https://mail.example.com/jmap');
+    expect(withResource.searchParams.getAll('resource')).toHaveLength(1);
+
+    for (const unset of [undefined, '']) {
+      const url = new URL('https://id.example.org/authorize?response_type=code');
+      oauth.setLiteOAuthResource(url, unset);
+      expect(url.toString()).toBe('https://id.example.org/authorize?response_type=code');
+    }
+  });
+
+  it('keeps the resource in the parked flow, and omits it when there is none', async () => {
+    const { oauth } = await loadModules('static');
+    const flow = { tokenEndpoint: 'https://id.example.org/token', clientId: 'app', redirectUri: 'https://mail.example.com/oauth/callback', persistent: false };
+    oauth.saveLiteOAuthFlow({ ...flow, resource: 'https://mail.example.com/jmap' });
+    expect(oauth.readLiteOAuthFlow()).toEqual({ ...flow, resource: 'https://mail.example.com/jmap' });
+    oauth.saveLiteOAuthFlow(flow);
+    expect(oauth.readLiteOAuthFlow()).toEqual(flow);
+  });
+
   it('reports a rejected code', async () => {
     const { tokens } = await loadModules();
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'invalid_grant' }, 400)));

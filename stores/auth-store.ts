@@ -471,6 +471,7 @@ async function exchangeOAuthCode(params: {
       codeVerifier,
       redirectUri: flow.redirectUri,
       clientId: flow.clientId,
+      resource: flow.resource,
     });
     // The username is filled in once the session names the account
     // (nameLiteRefreshToken in loginWithOAuth).
