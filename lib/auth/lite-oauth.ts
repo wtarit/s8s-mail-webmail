@@ -1,4 +1,5 @@
-import { IS_LITE_STALWART, getLiteMount } from '@/lib/lite';
+import { IS_LITE, IS_LITE_STALWART, getLiteMount } from '@/lib/lite';
+import { getPathPrefix } from '@/lib/browser-navigation';
 import { discoverOAuth, type OAuthMetadata } from '@/lib/oauth/discovery';
 
 /**
@@ -19,13 +20,35 @@ import { discoverOAuth, type OAuthMetadata } from '@/lib/oauth/discovery';
  * (/api/auth/oauth/metadata, /api/auth/token); here both happen in the
  * browser, which an external provider has to allow with CORS on its token
  * endpoint, exactly as it does for the WebUI.
+ *
+ * Lite on a static host runs the same flow against one provider named in
+ * config.json (`oauthClientId`, `oauthIssuerUrl`): there is no Stalwart to ask
+ * which provider signs an account in, so the provider is found through its
+ * standard well-known metadata (liteDiscoverStaticOAuth).
  */
 
 /** Path of the redirect URI below the mount; the entry document boots the callback shell for it. */
 export const LITE_OAUTH_CALLBACK_PATH = '/oauth/callback';
 
-/** Whether this build can run the redirect flow at all. */
+/**
+ * Whether this build discovers the provider per account through Stalwart
+ * (the Stalwart target). A static host has no such answer: see
+ * `isLiteOAuthAvailable`.
+ */
 export const LITE_OAUTH_AVAILABLE = IS_LITE_STALWART;
+
+/** Static host with an OIDC client in config.json (`oauthClientId`). */
+export function isLiteStaticOAuth(clientId: string): boolean {
+  return IS_LITE && !IS_LITE_STALWART && clientId.trim() !== '';
+}
+
+/**
+ * Whether the redirect flow can run: always on the Stalwart target, on a
+ * static host only once config.json names an OIDC client.
+ */
+export function isLiteOAuthAvailable(clientId: string): boolean {
+  return LITE_OAUTH_AVAILABLE || isLiteStaticOAuth(clientId);
+}
 
 const FLOW_KEY = 'oauth_lite_flow';
 const WANTED_SCOPES = ['openid', 'email', 'profile', 'offline_access'];
@@ -34,11 +57,14 @@ const DISCOVERY_TIMEOUT_MS = 4000;
 
 /**
  * The redirect URI to register for the Application: `<origin><mount>/oauth/callback`.
- * No locale in it, so one registration covers every language.
+ * No locale in it, so one registration covers every language. On a static host
+ * the mount is the build's base path and `/oauth/callback/index.html` (written
+ * by postbuild) hands the response to the callback shell.
  */
 export function getLiteOAuthRedirectUri(): string {
   if (typeof window === 'undefined') return '';
-  return `${window.location.origin}${getLiteMount() ?? ''}${LITE_OAUTH_CALLBACK_PATH}`;
+  const mount = IS_LITE_STALWART ? getLiteMount() ?? '' : getPathPrefix();
+  return `${window.location.origin}${mount}${LITE_OAUTH_CALLBACK_PATH}`;
 }
 
 export interface LiteOAuthDiscovery {
@@ -102,6 +128,34 @@ async function isOwnEndpoint(endpoint: string, serverUrl: string): Promise<boole
   if (origin === originOf(serverUrl)) return true;
   const own = await discoverOAuth(serverUrl);
   return own?.authorization_endpoint === endpoint;
+}
+
+/**
+ * The provider a static host signs in at: `oauthIssuerUrl`, else the mail
+ * server's own origin (Stalwart and most JMAP servers publish their metadata
+ * there). '' when neither is a usable URL.
+ */
+export function liteStaticIssuer(issuerUrl: string, serverUrl: string): string {
+  const issuer = trimUrl(issuerUrl.trim());
+  if (/^https?:\/\//.test(issuer)) return issuer;
+  return /^https?:\/\//.test(serverUrl) ? originOf(serverUrl) ?? '' : '';
+}
+
+/**
+ * Static host: the configured provider's standard metadata
+ * (`/.well-known/oauth-authorization-server`, then `/.well-known/openid-configuration`).
+ * `null` when it cannot be read (unreachable, no CORS on the well-known
+ * document, endpoints missing); the login page then says discovery failed.
+ */
+export async function liteDiscoverStaticOAuth(issuerUrl: string): Promise<LiteOAuthDiscovery | null> {
+  const issuer = trimUrl(issuerUrl.trim());
+  if (!IS_LITE || IS_LITE_STALWART || !/^https?:\/\//.test(issuer)) return null;
+  const metadata = await discoverOAuth(issuer);
+  if (!metadata) return null;
+  // The user (and later the authorization code) is only ever sent to http(s).
+  if (!/^https?:\/\//.test(metadata.authorization_endpoint) || !/^https?:\/\//.test(metadata.token_endpoint)) return null;
+  // The password form stays: config.json's `oauthOnly` is what hides it.
+  return { metadata, external: false, scope: pickScope(metadata.scopes_supported) };
 }
 
 // The login page asks while the user types, again on submit and again for the

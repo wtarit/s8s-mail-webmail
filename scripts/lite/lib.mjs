@@ -239,8 +239,13 @@ export function buildManifest({ appName, basePath = "" }) {
   };
 }
 
-/** Root index.html: pick the visitor's locale in the browser and jump to it. */
-export function buildRootRedirect({ basePath = "", locales, defaultLocale = "en" }) {
+/**
+ * Root index.html: pick the visitor's locale in the browser and jump to it.
+ * `path` is a page below the locale to land on instead of its root, with the
+ * query string and fragment carried along (`auth/callback/` for the OAuth
+ * redirect URI, see buildOAuthCallbackRedirect).
+ */
+export function buildRootRedirect({ basePath = "", locales, defaultLocale = "en", path = "" }) {
   const list = JSON.stringify(locales);
   const fallback = locales.includes(defaultLocale) ? defaultLocale : locales[0];
   return `<!doctype html>
@@ -276,13 +281,24 @@ export function buildRootRedirect({ basePath = "", locales, defaultLocale = "en"
   } catch (e) {}
   var langs = navigator.languages || [navigator.language];
   for (var j = 0; !chosen && j < langs.length; j++) chosen = pick(langs[j]);
-  location.replace(base + "/" + (chosen || fallback) + "/" + location.search + location.hash);
+  location.replace(base + "/" + (chosen || fallback) + "/"${path ? ` + ${JSON.stringify(path)}` : ""} + location.search + location.hash);
 })();
 </script>
 </head>
-<body><noscript>This app needs JavaScript. <a href="${basePath}/${fallback}/">Continue</a></noscript></body>
+<body><noscript>This app needs JavaScript. <a href="${basePath}/${fallback}/${path}">Continue</a></noscript></body>
 </html>
 `;
+}
+
+/**
+ * `oauth/callback/index.html` (static target): the redirect URI to register at
+ * an OpenID provider, `<origin><base>/oauth/callback`. It names no locale, so
+ * one registration covers every language, and it is a real file, so no host
+ * needs a rewrite rule for it. It forwards the provider's answer (`?code=...`)
+ * to the callback shell of the visitor's locale (lib/auth/lite-oauth.ts).
+ */
+export function buildOAuthCallbackRedirect({ basePath = "", locales, defaultLocale = "en" }) {
+  return buildRootRedirect({ basePath, locales, defaultLocale, path: "auth/callback/" });
 }
 
 /**
@@ -661,6 +677,8 @@ ${demoMode ? "Demo mode is ON: the login page offers a built-in demo account and
      while \`jmapServerUrl\` is empty.
    - \`rememberMeEnabled\`: \`false\` never remembers a sign-in (sessions then end with the tab).
      Sign-ins are otherwise remembered; \`loginShowRememberMe: true\` lets people choose.
+   - \`oauthClientId\` (optional): shows **Sign in with SSO** and signs in at an
+     OpenID Connect provider, see "Single sign-on" below.
    Optional keys: \`demoMode\`, \`jmapServers\`, \`jmapServerAutoPickByDomain\`, the login logo/company/link keys and \`loginShow*\` toggles (same names as the Docker env vars, camelCased).
 3. Allow the browser to talk to the mail server (CORS). In Stalwart:
 
@@ -672,6 +690,37 @@ ${demoMode ? "Demo mode is ON: the login page offers a built-in demo account and
    or an equivalent reverse-proxy rule that allows your Lite origin with the
    \`Authorization\` and \`Content-Type\` headers on \`/.well-known/jmap\`, \`/jmap/*\`,
    \`/api/auth\` and \`/auth/token\`.
+
+## Single sign-on (OpenID Connect)
+
+To sign in at an OpenID Connect provider (Keycloak, Authentik, Authelia, Stalwart
+as its own provider, ...) instead of typing a password, add the provider's client
+to \`config.json\`:
+
+\`\`\`json
+{
+  "oauthClientId": "bulwark-lite",
+  "oauthIssuerUrl": "https://id.example.com/realms/main",
+  "oauthOnly": false,
+  "autoSsoEnabled": false
+}
+\`\`\`
+
+- \`oauthClientId\`: a **public** client (no secret) that allows the authorization
+  code flow with PKCE. Without it nothing changes: password sign-in only.
+- \`oauthIssuerUrl\` (optional): the provider. Its \`/.well-known/oauth-authorization-server\`
+  or \`/.well-known/openid-configuration\` is read from the browser. Left out, it is the
+  origin of \`jmapServerUrl\`.
+- \`oauthOnly\` (optional): hide the password form, show only the SSO button.
+- \`autoSsoEnabled\` (optional, with \`oauthOnly\`): go to the provider without a click.
+- Register the redirect URI \`https://<your host>${basePath}/oauth/callback\` at the provider
+  (a real file in this folder, no rewrite rule needed). It names no language.
+- The scopes are \`openid email profile offline_access\`, as far as the provider
+  lists them. The access token is sent to the JMAP server as a Bearer token, so
+  that server has to accept tokens from this provider, and it is renewed with the
+  refresh token.
+- The provider must answer the browser's CORS requests for its well-known document
+  and its token endpoint, like the mail server in step 3.
 
 ## Host configuration
 
@@ -694,8 +743,8 @@ multiple accounts, calendar, contacts, files, themes, settings export/import,
 password and TOTP login, demo mode, deep links.
 
 Not available in Lite (they need the Node.js server): the admin console and
-setup wizard, plugins and sidebar apps, settings sync across devices, OAuth /
-SSO login, the account security tab (app passwords, 2FA setup), ICS URL
+setup wizard, plugins and sidebar apps, settings sync across devices, the
+server-relayed OAuth login (SSO works through \`oauthClientId\`, see above), the account security tab (app passwords, 2FA setup), ICS URL
 subscriptions and CalDAV discovery, sender favicons, office (WOPI) editing,
 web push notifications, the update banner, device pairing, and the
 "Default apps" page (registering Lite as the mailto:/webcal: handler).

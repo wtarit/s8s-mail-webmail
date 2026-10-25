@@ -2,12 +2,15 @@ import type { ConfigData } from '@/hooks/use-config';
 import type { SettingsPolicy } from '@/lib/admin/types';
 import { DEFAULT_POLICY } from '@/lib/admin/types';
 import { httpUrlOrEmpty } from '@/lib/config-validation';
+import { IS_LITE_STALWART } from '@/lib/lite';
 
 /**
  * Flags that need the Next.js server (cookies, filesystem, OAuth relay). They
  * are pinned regardless of what config.json contains. `oauthEnabled` is the
  * server-relayed flow; Lite on Stalwart signs in through an OpenID provider
  * on its own, decided per account at runtime (lib/auth/lite-oauth.ts).
+ * `oauthOnly` and `autoSsoEnabled` are pinned off here and only come back
+ * from config.json for a static host that names an OIDC client (see below).
  */
 export const LITE_FORCED_FLAGS = {
   oauthEnabled: false,
@@ -38,6 +41,9 @@ function trimUrl(value: string): string {
  * - `jmapServerUrl` is trimmed of trailing slashes.
  * - `allowCustomJmapEndpoint` defaults to *on* when no server is configured,
  *   so an unedited download still lets people type their server.
+ * - `oauthClientId` (static host only) turns on the SSO button;
+ *   `oauthIssuerUrl` (default: the JMAP server's origin), `oauthOnly` and
+ *   `autoSsoEnabled` only count with it.
  * - `rememberMeEnabled` defaults to on, and sign-ins are remembered without
  *   asking unless `loginShowRememberMe` shows the box. Servers without
  *   Stalwart's token login are never remembered (see lib/auth/lite-tokens.ts).
@@ -62,11 +68,16 @@ export function applyLiteConfig(raw: unknown, defaults?: { jmapServerUrl?: strin
         }))
     : [];
 
+  // A static host signs in at one OIDC provider named here (lib/auth/lite-oauth.ts).
+  // On Stalwart the client id is the Application's, injected into the page, so
+  // the file cannot set it.
+  const oauthClientId = IS_LITE_STALWART ? '' : str(input.oauthClientId, '').trim();
+
   return {
     appName: str(input.appName, '') || 'Webmail',
     jmapServerUrl,
-    oauthClientId: '',
-    oauthIssuerUrl: '',
+    oauthClientId,
+    oauthIssuerUrl: oauthClientId ? trimUrl(str(input.oauthIssuerUrl, '')) : '',
     oauthScopes: '',
     rememberMeEnabled: bool(input.rememberMeEnabled, true),
     faviconUrl: str(input.faviconUrl, '') || '/branding/Bulwark_Favicon.svg',
@@ -94,6 +105,8 @@ export function applyLiteConfig(raw: unknown, defaults?: { jmapServerUrl?: strin
     parentOrigin: str(input.parentOrigin, ''),
     sourceCodeUrl: httpUrlOrEmpty(input.sourceCodeUrl),
     ...LITE_FORCED_FLAGS,
+    oauthOnly: oauthClientId !== '' && bool(input.oauthOnly, false),
+    autoSsoEnabled: oauthClientId !== '' && bool(input.autoSsoEnabled, false),
   };
 }
 

@@ -8,10 +8,10 @@
 // follow the runtime mount, no host snippets, no 404.html - and packs out/
 // into bulwark-lite-stalwart.zip.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   STALWART_EXCLUDED_DIRS, STALWART_EXCLUDED_FILES, STALWART_ZIP_NAME,
-  buildCaddyExample, buildConnectorCapabilities, buildHeaders, buildLiteConfig, buildLitePolicy, buildManifest, buildNginxExample, buildNotFoundShim, buildReadme, buildRedirects, buildRootRedirect,
+  buildCaddyExample, buildConnectorCapabilities, buildHeaders, buildLiteConfig, buildLitePolicy, buildManifest, buildNginxExample, buildNotFoundShim, buildOAuthCallbackRedirect, buildReadme, buildRedirects, buildRootRedirect,
   buildStalwartEntry, buildStalwartManifest, buildStalwartReadme, buildZip, collectZipEntries, discoverBuiltLocales, discoverShellDirs, findSegmentPrefetchDirs, isMainModule, makeBuildId, normalizeBasePath, parseLiteTarget, resolveRepoRoot,
   withScriptHashCsp,
 } from "./lib.mjs";
@@ -46,6 +46,7 @@ export function runPostbuild({ root = repoRoot, env = process.env, log = console
 
   mkdirSync(outDir, { recursive: true });
   for (const [name, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(outDir, name)), { recursive: true });
     writeFileSync(join(outDir, name), content);
   }
   // The Stalwart target rewrites its shells at runtime, so their scripts
@@ -76,6 +77,8 @@ function staticFiles({ config, basePath, locales, defaultLocale, version, commit
     "connector.json": buildConnectorCapabilities({ appName: config.appName, version, basePath }),
     "manifest.webmanifest": JSON.stringify(buildManifest({ appName: config.appName, basePath }), null, 2) + "\n",
     "index.html": buildRootRedirect({ basePath, locales, defaultLocale }),
+    // The redirect URI to register at an OpenID provider (config.json `oauthClientId`).
+    "oauth/callback/index.html": buildOAuthCallbackRedirect({ basePath, locales, defaultLocale }),
     // Replaces Next's default not-found page: only this shim replays deep links
     // on hosts without rewrite rules (see buildNotFoundShim).
     "404.html": buildNotFoundShim({ basePath, locales }),

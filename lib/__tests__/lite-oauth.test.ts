@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * The redirect flow only exists in the Stalwart target, a build-time switch,
  * so every test imports the modules fresh with the env stubbed.
  */
-async function loadModules(target: 'stalwart' | 'static' = 'stalwart') {
+async function loadModules(target: 'stalwart' | 'static' = 'stalwart', basePath = '') {
   vi.resetModules();
   vi.stubEnv('NEXT_PUBLIC_BULWARK_LITE', '1');
   vi.stubEnv('NEXT_PUBLIC_LITE_TARGET', target);
-  vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '');
+  vi.stubEnv('NEXT_PUBLIC_BASE_PATH', basePath);
   const oauth = await import('@/lib/auth/lite-oauth');
   const tokens = await import('@/lib/auth/lite-tokens');
   return { oauth, tokens };
@@ -186,6 +186,94 @@ describe('Lite on Stalwart: OAuth discovery', () => {
     expect(oauth.LITE_OAUTH_AVAILABLE).toBe(false);
     await expect(oauth.liteDiscoverOAuth(SERVER, 'alice@example.com')).resolves.toBeNull();
     expect(calls).toEqual([]);
+  });
+});
+
+describe('Lite on a static host: OIDC provider from config.json', () => {
+  const ISSUER = 'https://id.example.org/realms/main';
+  const OIDC_DOCUMENT = {
+    issuer: ISSUER,
+    authorization_endpoint: `${ISSUER}/protocol/openid-connect/auth`,
+    token_endpoint: `${ISSUER}/protocol/openid-connect/token`,
+    revocation_endpoint: `${ISSUER}/protocol/openid-connect/revoke`,
+    scopes_supported: ['openid', 'profile', 'email', 'offline_access', 'groups'],
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it('is available only once config.json names a client', async () => {
+    const { oauth } = await loadModules('static');
+    expect(oauth.LITE_OAUTH_AVAILABLE).toBe(false);
+    expect(oauth.isLiteOAuthAvailable('')).toBe(false);
+    expect(oauth.isLiteOAuthAvailable('  ')).toBe(false);
+    expect(oauth.isLiteOAuthAvailable('bulwark-lite')).toBe(true);
+    expect(oauth.isLiteStaticOAuth('bulwark-lite')).toBe(true);
+  });
+
+  it('leaves the Stalwart target to its own discovery', async () => {
+    const { oauth } = await loadModules('stalwart');
+    expect(oauth.isLiteOAuthAvailable('')).toBe(true);
+    expect(oauth.isLiteStaticOAuth('bulwark-lite')).toBe(false);
+    const calls = stubFetch({});
+    await expect(oauth.liteDiscoverStaticOAuth(ISSUER)).resolves.toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('discovers the provider through its standard well-known metadata, not /api/discover', async () => {
+    const { oauth } = await loadModules('static');
+    const calls = stubFetch({ [`${ISSUER}/.well-known/openid-configuration`]: () => jsonResponse(OIDC_DOCUMENT) });
+
+    const found = await oauth.liteDiscoverStaticOAuth(`${ISSUER}/`);
+    expect(calls).toEqual([
+      `${ISSUER}/.well-known/oauth-authorization-server`,
+      `${ISSUER}/.well-known/openid-configuration`,
+    ]);
+    expect(found?.metadata.authorization_endpoint).toBe(OIDC_DOCUMENT.authorization_endpoint);
+    expect(found?.metadata.token_endpoint).toBe(OIDC_DOCUMENT.token_endpoint);
+    expect(found?.metadata.revocation_endpoint).toBe(OIDC_DOCUMENT.revocation_endpoint);
+    // PKCE login with a refresh token, as far as the provider lists the scopes.
+    expect(found?.scope).toBe('openid email profile offline_access');
+    expect(calls.some((url) => url.includes('/api/discover'))).toBe(false);
+  });
+
+  it('asks for no scope from a provider that does not list openid, and the default when it lists none', async () => {
+    const { oauth } = await loadModules('static');
+    stubFetch({
+      'https://a.example/.well-known/oauth-authorization-server': () => jsonResponse({ ...OIDC_DOCUMENT, scopes_supported: ['mail'] }),
+      'https://b.example/.well-known/oauth-authorization-server': () => jsonResponse({ ...OIDC_DOCUMENT, scopes_supported: undefined }),
+    });
+    expect((await oauth.liteDiscoverStaticOAuth('https://a.example'))?.scope).toBe('');
+    expect((await oauth.liteDiscoverStaticOAuth('https://b.example'))?.scope).toBe('openid email profile');
+  });
+
+  it('gives up on a provider without usable metadata or a usable URL', async () => {
+    const { oauth } = await loadModules('static');
+    const calls = stubFetch({});
+    await expect(oauth.liteDiscoverStaticOAuth('')).resolves.toBeNull();
+    await expect(oauth.liteDiscoverStaticOAuth('/relative')).resolves.toBeNull();
+    expect(calls).toEqual([]);
+    await expect(oauth.liteDiscoverStaticOAuth('https://down.example')).resolves.toBeNull();
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  it('defaults the provider to the JMAP server origin', async () => {
+    const { oauth } = await loadModules('static');
+    expect(oauth.liteStaticIssuer('', 'https://mail.example.com/jmap/session')).toBe('https://mail.example.com');
+    expect(oauth.liteStaticIssuer(`${ISSUER}/`, SERVER)).toBe(ISSUER);
+    expect(oauth.liteStaticIssuer('not a url', SERVER)).toBe(SERVER);
+    expect(oauth.liteStaticIssuer('', '')).toBe('');
+    expect(oauth.liteStaticIssuer('', 'mail.example.com')).toBe('');
+  });
+
+  it('registers one locale-free redirect URI below the base path', async () => {
+    const root = await loadModules('static');
+    expect(root.oauth.getLiteOAuthRedirectUri()).toBe(`${window.location.origin}/oauth/callback`);
+    const mounted = await loadModules('static', '/mail');
+    expect(mounted.oauth.getLiteOAuthRedirectUri()).toBe(`${window.location.origin}/mail/oauth/callback`);
   });
 });
 

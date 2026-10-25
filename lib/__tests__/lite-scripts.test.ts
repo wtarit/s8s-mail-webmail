@@ -22,6 +22,7 @@ import {
   buildNginxContainerTemplate,
   buildNginxExample,
   buildNotFoundShim,
+  buildOAuthCallbackRedirect,
   buildReadme,
   buildRedirects,
   buildRootRedirect,
@@ -154,6 +155,25 @@ describe('lite build helpers', () => {
     expect(LOCALE_STORAGE_KEY).toBe('locale-storage');
     // An unknown default falls back to the first built locale.
     expect(buildRootRedirect({ locales: ['de'], defaultLocale: 'fr' })).toContain('var fallback = "de"');
+  });
+
+  it('writes the OAuth redirect URI as a file that forwards to the callback shell', () => {
+    const html = buildOAuthCallbackRedirect({ basePath: '/webmail', locales: ['de', 'en'], defaultLocale: 'en' });
+    // Same locale choice as the root shim, landing on the callback page with ?code=...&state=... intact.
+    expect(html).toContain('var locales = ["de","en"]');
+    expect(html).toContain('var base = "/webmail"');
+    expect(html).toContain(`localStorage.getItem("${LOCALE_STORAGE_KEY}")`);
+    expect(html).toContain('"/" + "auth/callback/" + location.search + location.hash');
+    expect(html).toContain('href="/webmail/en/auth/callback/"');
+    // The root shim is unchanged.
+    expect(buildRootRedirect({ locales: ['en'] })).toContain('"/" + location.search + location.hash');
+  });
+
+  it('documents the SSO keys of config.json and the redirect URI', () => {
+    const readme = buildReadme({ version: '1.10.0', commit: 'abc1234', basePath: '/w', locales: ['en'] });
+    expect(readme).toContain('## Single sign-on (OpenID Connect)');
+    for (const key of ['oauthClientId', 'oauthIssuerUrl', 'oauthOnly', 'autoSsoEnabled']) expect(readme).toContain(key);
+    expect(readme).toContain('https://<your host>/w/oauth/callback');
   });
 
   it('emits a CSP that allows inline scripts and the configured server only', () => {
@@ -331,9 +351,11 @@ describe('prepare / postbuild / verify against a fake checkout', () => {
       });
       expect(result.locales).toEqual(['de', 'en']);
       expect(result.basePath).toBe('/w');
-      for (const file of ['config.json', 'policy.json', 'manifest.webmanifest', 'index.html', '_redirects', '_headers', 'nginx.conf.example', 'Caddyfile.example', 'LITE-README.md', 'lite-build.json']) {
-        expect(existsSync(join(out, file)), file).toBe(true);
+      for (const file of ['config.json', 'policy.json', 'manifest.webmanifest', 'index.html', 'oauth/callback/index.html', '_redirects', '_headers', 'nginx.conf.example', 'Caddyfile.example', 'LITE-README.md', 'lite-build.json']) {
+        expect(existsSync(join(out, ...file.split('/'))), file).toBe(true);
       }
+      // The redirect URI of an OpenID provider: a file, so no host rewrite is needed.
+      expect(readFileSync(join(out, 'oauth', 'callback', 'index.html'), 'utf8')).toContain('"auth/callback/"');
       expect(collectApiStrings(join(out, '_next', 'static'))).toEqual(['/api/config', '/api/plugins']);
       // Next's default not-found page was replaced by the park-and-replay shim.
       expect(readFileSync(join(out, '404.html'), 'utf8')).toContain(LITE_PENDING_PATH_KEY);

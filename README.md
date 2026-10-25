@@ -1,3 +1,12 @@
+# s8s-mail Webmail
+
+Fork of [Bulwark Webmail](https://github.com/bulwarkmail/webmail) for [s8s-mail](https://github.com/wtarit/s8s-mail).
+
+Added:
+- **Sign in with any OpenID Connect provider on Lite static builds** (`oauthClientId` in `config.json`).
+
+The rest of this README is upstream's.
+
 <p>
   <a href="https://bulwarkmail.org"><img src="https://raw.githubusercontent.com/bulwarkmail/.github/main/profile/banner.png" alt="Bulwark: webmail for Stalwart Mail Server. Mail, calendar, contacts and files in one browser client." width="100%" /></a>
 </p>

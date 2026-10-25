@@ -26,7 +26,11 @@ import { getLiteClientId, probeLiteTokenLogin } from "@/lib/auth/lite-tokens";
 import {
   LITE_OAUTH_AVAILABLE,
   getLiteOAuthRedirectUri,
+  isLiteOAuthAvailable,
+  isLiteStaticOAuth,
   liteDiscoverOAuth,
+  liteDiscoverStaticOAuth,
+  liteStaticIssuer,
   saveLiteOAuthFlow,
   type LiteOAuthDiscovery,
 } from "@/lib/auth/lite-oauth";
@@ -291,6 +295,31 @@ function LoginPageContent() {
   const liteSsoRequired = liteDomain !== "" && liteOAuthByDomain?.domain === liteDomain && liteOAuthByDomain.discovery?.external === true;
   // The admin gave the Application an OAuth client: offer SSO next to the form.
   const liteSsoOffered = LITE_OAUTH_AVAILABLE && !liteSsoRequired && getLiteInjectedClientId() !== "";
+
+  // Lite on a static host: config.json names one OpenID provider
+  // (`oauthClientId`, `oauthIssuerUrl`). Its metadata fills the same state the
+  // server build fills from /api/auth/oauth/metadata, so the SSO button, the
+  // "SSO only" layout and the discovery notice follow without a Stalwart.
+  const liteStaticOAuth = isLiteStaticOAuth(globalOauthClientId);
+  const liteIssuerUrl = liteStaticOAuth ? liteStaticIssuer(globalOauthIssuerUrl, probeTarget) : "";
+  useEffect(() => {
+    if (!liteIssuerUrl) return;
+    setOauthDiscoveryDone(false);
+    setOauthMetadata(null);
+    let cancelled = false;
+    // Debounced when the issuer follows the custom endpoint field.
+    const timer = setTimeout(() => {
+      liteDiscoverStaticOAuth(liteIssuerUrl).then((discovery) => {
+        if (cancelled) return;
+        setOauthMetadata(discovery?.metadata ?? null);
+        setOauthDiscoveryDone(true);
+      });
+    }, globalOauthIssuerUrl ? 0 : 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [liteIssuerUrl, globalOauthIssuerUrl]);
 
   useEffect(() => {
     if (serverUrl) {
@@ -562,6 +591,23 @@ function LoginPageContent() {
     startServerSideSso();
   }, [autoSsoEnabled, oauthOnly, oauthDiscoveryDone, oauthMetadata, ssoError, isAddAccountMode, isAuthenticated, jmapServers.length, startServerSideSso]);
 
+  // Lite on a static host: auto-SSO for the configured provider, with the
+  // same guards as the server-side one above (no loop, none after sign-out).
+  // startLiteOAuth is defined below the early returns, so it comes in by ref.
+  const startLiteOAuthRef = useRef<((serverUrl: string) => Promise<void>) | null>(null);
+  useEffect(() => {
+    if (!liteStaticOAuth || !autoSsoEnabled || !oauthOnly || !oauthMetadata) return;
+    if (signedOutOnPurpose.current !== false || ssoError || isAddAccountMode || isAuthenticated) return;
+    if (autoSsoTriggered.current) return;
+    try {
+      if (sessionStorage.getItem("sso_attempted")) return;
+      sessionStorage.setItem("sso_attempted", "1");
+      setTimeout(() => { try { sessionStorage.removeItem("sso_attempted"); } catch { /* ignore */ } }, 30000);
+    } catch { /* sessionStorage unavailable */ }
+    autoSsoTriggered.current = true;
+    startLiteOAuthRef.current?.(probeTarget);
+  }, [liteStaticOAuth, autoSsoEnabled, oauthOnly, oauthMetadata, ssoError, isAddAccountMode, isAuthenticated, probeTarget]);
+
   const handleThemeSelect = useCallback((newTheme: "light" | "dark" | "system") => {
     setTheme(newTheme);
     setShowThemeMenu(false);
@@ -687,14 +733,17 @@ function LoginPageContent() {
   // Discovery needs the account, which decides the provider.
   const startLiteOAuth = async (liteServerUrl: string) => {
     const account = formData.username.trim();
-    if (!account) {
+    // A static host has one configured provider and needs no account to find it.
+    if (!account && !liteStaticOAuth) {
       inputRef.current?.focus();
       inputRef.current?.reportValidity();
       return;
     }
     setOauthLoading(true);
     setLiteOAuthFailed(false);
-    const discovery = await liteDiscoverOAuth(liteServerUrl, account);
+    const discovery = liteStaticOAuth
+      ? await liteDiscoverStaticOAuth(liteIssuerUrl)
+      : await liteDiscoverOAuth(liteServerUrl, account);
     if (!discovery) {
       setLiteOAuthFailed(true);
       setOauthLoading(false);
@@ -705,7 +754,7 @@ function LoginPageContent() {
     const challenge = await generateCodeChallenge(verifier);
     const state = generateState();
     const redirectUri = getLiteOAuthRedirectUri();
-    const clientId = getLiteClientId();
+    const clientId = liteStaticOAuth ? globalOauthClientId.trim() : getLiteClientId();
 
     sessionStorage.setItem("oauth_code_verifier", verifier);
     sessionStorage.setItem("oauth_state", state);
@@ -731,13 +780,14 @@ function LoginPageContent() {
     authUrl.searchParams.set("state", state);
     authUrl.searchParams.set("code_challenge", challenge);
     authUrl.searchParams.set("code_challenge_method", "S256");
-    authUrl.searchParams.set("login_hint", account);
+    if (account) authUrl.searchParams.set("login_hint", account);
     if (isAddAccountMode) {
       authUrl.searchParams.set("prompt", "select_account");
     }
 
     window.location.href = authUrl.toString();
   };
+  startLiteOAuthRef.current = startLiteOAuth;
 
   /**
    * Starts OAuth for the selected server, or for `target`: a server in the
@@ -745,7 +795,7 @@ function LoginPageContent() {
    * whichever server is selected so that "Sign in with Google" is one tap.
    */
   const handleOAuthLogin = async (target?: PublicJmapServerEntry) => {
-    if (LITE_OAUTH_AVAILABLE && !target) {
+    if (isLiteOAuthAvailable(globalOauthClientId) && !target) {
       await startLiteOAuth(probeTarget);
       return;
     }
@@ -1598,7 +1648,7 @@ function LoginPageContent() {
                   </>
                 )}
 
-                {((serverOauthEnabled && oauthDiscoveryDone && !oauthMetadata) || liteOAuthFailed) && (
+                {(((serverOauthEnabled || liteStaticOAuth) && oauthDiscoveryDone && !oauthMetadata) || liteOAuthFailed) && (
                   <div className="mt-2 p-3 rounded-xl border border-warning/20 bg-warning/5 flex items-start gap-3">
                     <div className="w-10 h-10 rounded-full bg-warning/15 text-warning flex items-center justify-center flex-shrink-0 shadow-sm">
                       <AlertCircle className="w-5 h-5" />

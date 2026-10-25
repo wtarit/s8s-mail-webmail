@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyLiteConfig, applyLitePolicy, liteStalwartDefaults, LITE_FORCED_FLAGS } from '@/lib/lite-config';
 import { DEFAULT_POLICY } from '@/lib/admin/types';
 
@@ -54,6 +54,29 @@ describe('applyLiteConfig (config.json for the static build)', () => {
     expect(config.oauthClientId).toBe('');
   });
 
+  it('offers SSO on a static host only when config.json names an OIDC client', () => {
+    const without = applyLiteConfig({ oauthIssuerUrl: 'https://id.example.org', oauthOnly: true, autoSsoEnabled: true });
+    expect(without.oauthClientId).toBe('');
+    expect(without.oauthIssuerUrl).toBe('');
+    expect(without.oauthOnly).toBe(false);
+    expect(without.autoSsoEnabled).toBe(false);
+
+    const withClient = applyLiteConfig({ oauthClientId: ' bulwark-lite ', oauthIssuerUrl: 'https://id.example.org/realms/main/', oauthOnly: true, autoSsoEnabled: true });
+    expect(withClient.oauthClientId).toBe('bulwark-lite');
+    expect(withClient.oauthIssuerUrl).toBe('https://id.example.org/realms/main');
+    expect(withClient.oauthOnly).toBe(true);
+    expect(withClient.autoSsoEnabled).toBe(true);
+    // The server-relayed flow stays off: the browser does the whole exchange.
+    expect(withClient.oauthEnabled).toBe(false);
+
+    // Password sign-in stays unless asked otherwise.
+    const defaults = applyLiteConfig({ oauthClientId: 'bulwark-lite' });
+    expect(defaults.oauthIssuerUrl).toBe('');
+    expect(defaults.oauthOnly).toBe(false);
+    expect(defaults.autoSsoEnabled).toBe(false);
+    expect(applyLiteConfig({ oauthClientId: 12, oauthOnly: 'yes' }).oauthClientId).toBe('');
+  });
+
   it('ignores values of the wrong type instead of crashing', () => {
     const config = applyLiteConfig({ appName: 12, rememberMeEnabled: 'yes', loginShowVersion: 0, jmapServers: 'x' });
     expect(config.appName).toBe('Webmail');
@@ -88,6 +111,25 @@ describe('applyLiteConfig (config.json for the static build)', () => {
     expect(config.demoMode).toBe(true);
     expect(config.embeddedMode).toBe(true);
     expect(config.parentOrigin).toBe('https://intranet.acme.example');
+  });
+});
+
+describe('applyLiteConfig on the Stalwart target', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('takes the client id from the Application, never from config.json', async () => {
+    vi.resetModules();
+    vi.stubEnv('NEXT_PUBLIC_BULWARK_LITE', '1');
+    vi.stubEnv('NEXT_PUBLIC_LITE_TARGET', 'stalwart');
+    const { applyLiteConfig: apply } = await import('@/lib/lite-config');
+    const config = apply({ oauthClientId: 'bulwark-lite', oauthIssuerUrl: 'https://id.example.org', oauthOnly: true, autoSsoEnabled: true });
+    expect(config.oauthClientId).toBe('');
+    expect(config.oauthIssuerUrl).toBe('');
+    expect(config.oauthOnly).toBe(false);
+    expect(config.autoSsoEnabled).toBe(false);
   });
 });
 
