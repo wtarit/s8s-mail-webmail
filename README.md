@@ -4,6 +4,7 @@ Fork of [Bulwark Webmail](https://github.com/bulwarkmail/webmail) for [s8s-mail]
 
 Added:
 - **Sign in with any OpenID Connect provider on Lite static builds** (`oauthClientId` in `config.json`).
+- **`oauthResource`**: sends an RFC 8707 `resource` at sign-in, so the provider issues JWT access tokens for JMAP.
 
 The rest of this README is upstream's.
 

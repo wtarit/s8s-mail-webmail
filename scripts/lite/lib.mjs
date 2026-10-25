@@ -711,6 +711,10 @@ to \`config.json\`:
 - \`oauthIssuerUrl\` (optional): the provider. Its \`/.well-known/oauth-authorization-server\`
   or \`/.well-known/openid-configuration\` is read from the browser. Left out, it is the
   origin of \`jmapServerUrl\`.
+- \`oauthResource\` (optional): an [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707) resource
+  indicator, sent as \`resource\` on the authorization request and the code exchange (not on
+  refresh). Needed by providers that only issue JWT access tokens for a registered resource;
+  use the JMAP API URL, e.g. \`https://mail.example.com/jmap\`. Left out, no \`resource\` is sent.
 - \`oauthOnly\` (optional): hide the password form, show only the SSO button.
 - \`autoSsoEnabled\` (optional, with \`oauthOnly\`): go to the provider without a click.
 - Register the redirect URI \`https://<your host>${basePath}/oauth/callback\` at the provider

@@ -42,7 +42,8 @@ function trimUrl(value: string): string {
  * - `allowCustomJmapEndpoint` defaults to *on* when no server is configured,
  *   so an unedited download still lets people type their server.
  * - `oauthClientId` (static host only) turns on the SSO button;
- *   `oauthIssuerUrl` (default: the JMAP server's origin), `oauthOnly` and
+ *   `oauthIssuerUrl` (default: the JMAP server's origin), `oauthResource`
+ *   (an RFC 8707 resource indicator sent with the sign-in), `oauthOnly` and
  *   `autoSsoEnabled` only count with it.
  * - `rememberMeEnabled` defaults to on, and sign-ins are remembered without
  *   asking unless `loginShowRememberMe` shows the box. Servers without
@@ -78,6 +79,8 @@ export function applyLiteConfig(raw: unknown, defaults?: { jmapServerUrl?: strin
     jmapServerUrl,
     oauthClientId,
     oauthIssuerUrl: oauthClientId ? trimUrl(str(input.oauthIssuerUrl, '')) : '',
+    // Compared as an exact string by the provider: not trimmed of slashes.
+    oauthResource: oauthClientId ? httpUrlOrEmpty(input.oauthResource) : '',
     oauthScopes: '',
     rememberMeEnabled: bool(input.rememberMeEnabled, true),
     faviconUrl: str(input.faviconUrl, '') || '/branding/Bulwark_Favicon.svg',

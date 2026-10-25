@@ -77,6 +77,18 @@ describe('applyLiteConfig (config.json for the static build)', () => {
     expect(applyLiteConfig({ oauthClientId: 12, oauthOnly: 'yes' }).oauthClientId).toBe('');
   });
 
+  it('passes oauthResource (RFC 8707) through, only with a client and only as an http(s) URL', () => {
+    const resource = 'https://mail.example.com/jmap';
+    expect(applyLiteConfig({ oauthClientId: 'bulwark-lite', oauthResource: ` ${resource} ` }).oauthResource).toBe(resource);
+    // Matched exactly by the provider: a trailing slash is kept.
+    expect(applyLiteConfig({ oauthClientId: 'bulwark-lite', oauthResource: `${resource}/` }).oauthResource).toBe(`${resource}/`);
+    // Unset, wrong type, not an http(s) URL, or no client: empty.
+    expect(applyLiteConfig({ oauthClientId: 'bulwark-lite' }).oauthResource).toBe('');
+    expect(applyLiteConfig({ oauthClientId: 'bulwark-lite', oauthResource: 12 }).oauthResource).toBe('');
+    expect(applyLiteConfig({ oauthClientId: 'bulwark-lite', oauthResource: 'javascript:alert(1)' }).oauthResource).toBe('');
+    expect(applyLiteConfig({ oauthResource: resource }).oauthResource).toBe('');
+  });
+
   it('ignores values of the wrong type instead of crashing', () => {
     const config = applyLiteConfig({ appName: 12, rememberMeEnabled: 'yes', loginShowVersion: 0, jmapServers: 'x' });
     expect(config.appName).toBe('Webmail');
@@ -125,9 +137,10 @@ describe('applyLiteConfig on the Stalwart target', () => {
     vi.stubEnv('NEXT_PUBLIC_BULWARK_LITE', '1');
     vi.stubEnv('NEXT_PUBLIC_LITE_TARGET', 'stalwart');
     const { applyLiteConfig: apply } = await import('@/lib/lite-config');
-    const config = apply({ oauthClientId: 'bulwark-lite', oauthIssuerUrl: 'https://id.example.org', oauthOnly: true, autoSsoEnabled: true });
+    const config = apply({ oauthClientId: 'bulwark-lite', oauthIssuerUrl: 'https://id.example.org', oauthResource: 'https://mail.example.com/jmap', oauthOnly: true, autoSsoEnabled: true });
     expect(config.oauthClientId).toBe('');
     expect(config.oauthIssuerUrl).toBe('');
+    expect(config.oauthResource).toBe('');
     expect(config.oauthOnly).toBe(false);
     expect(config.autoSsoEnabled).toBe(false);
   });

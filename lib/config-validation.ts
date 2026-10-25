@@ -9,6 +9,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const isString: Validator<string> = (value): value is string => typeof value === 'string';
+const isOptionalString: Validator<string | undefined> = (value): value is string | undefined => value === undefined || typeof value === 'string';
 const isBoolean: Validator<boolean> = (value): value is boolean => typeof value === 'boolean';
 
 function isJmapServers(value: unknown): value is PublicJmapServerEntry[] {
@@ -33,6 +34,7 @@ const configValidators = {
   oauthOnly: isBoolean,
   oauthClientId: isString,
   oauthIssuerUrl: isString,
+  oauthResource: isOptionalString,
   oauthScopes: isString,
   rememberMeEnabled: isBoolean,
   settingsSyncEnabled: isBoolean,

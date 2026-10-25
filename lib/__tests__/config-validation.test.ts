@@ -80,6 +80,11 @@ describe('server configuration validation', () => {
     expect(isConfigData({ ...createConfig(), [key as string]: value })).toBe(false);
   });
 
+  it('accepts an absent or string oauthResource and rejects other types', () => {
+    expect(isConfigData(createConfig({ oauthResource: 'https://mail.example.com/jmap' }))).toBe(true);
+    expect(isConfigData({ ...createConfig(), oauthResource: 42 })).toBe(false);
+  });
+
   it.each([
     null,
     {},
