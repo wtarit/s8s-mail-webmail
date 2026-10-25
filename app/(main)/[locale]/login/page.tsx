@@ -572,6 +572,8 @@ function LoginPageContent() {
     // back in through a provider session that outlived the sign-out (#905).
     if (signedOutOnPurpose.current === null) signedOutOnPurpose.current = consumeSignedOut();
     if (signedOutOnPurpose.current) return;
+    // A static Lite host has no server-side SSO routes: the effect below starts its browser flow.
+    if (liteStaticOAuth) return;
     if (!autoSsoEnabled || !oauthOnly || !oauthDiscoveryDone || !oauthMetadata) return;
     if (ssoError || isAddAccountMode || isAuthenticated) return;
     if (autoSsoTriggered.current) return;
@@ -590,7 +592,7 @@ function LoginPageContent() {
 
     autoSsoTriggered.current = true;
     startServerSideSso();
-  }, [autoSsoEnabled, oauthOnly, oauthDiscoveryDone, oauthMetadata, ssoError, isAddAccountMode, isAuthenticated, jmapServers.length, startServerSideSso]);
+  }, [liteStaticOAuth, autoSsoEnabled, oauthOnly, oauthDiscoveryDone, oauthMetadata, ssoError, isAddAccountMode, isAuthenticated, jmapServers.length, startServerSideSso]);
 
   // Lite on a static host: auto-SSO for the configured provider, with the
   // same guards as the server-side one above (no loop, none after sign-out).
