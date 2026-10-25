@@ -6,6 +6,8 @@ Added:
 - **Sign in with any OpenID Connect provider on Lite static builds** (`oauthClientId` in `config.json`).
 - **`oauthResource`**: sends an RFC 8707 `resource` at sign-in, so the provider issues JWT access tokens for JMAP.
 
+Releases: `s8s-webmail-<tag>.zip`, built for the `/webmail` base path. Push a tag like `1.17.2-s8s.1` from `main` to cut one.
+
 The rest of this README is upstream's.
 
 <p>
